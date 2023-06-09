@@ -1,6 +1,6 @@
 import os                                   # contact to Operative System
 
-from decouple import config                 # secret configs 
+from decouple import config
 import requests                             #  for making HTTP requests
 from datetime import datetime               # for date and time manipulation
 from datetime import timedelta, time        # time, time time

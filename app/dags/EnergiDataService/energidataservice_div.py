@@ -4,7 +4,7 @@ import os                                   # contact to Operative System
 import airflow
 from airflow.decorators import dag, task
 
-from decouple import config                 # secret configs 
+from decouple import config                 # secret configs
 import requests                             #  for making HTTP requests
 import time
 from datetime import datetime               # for date and time manipulation
@@ -37,12 +37,12 @@ def pull_data(service: str, data_dir: str, data_name: str, data_timedate: dateti
     page_index = 0
 
     fNames = []
-    
+
     while True:
         if not 'limit' in params.keys():
             params['limit'] = page_size
         params['offset'] = page_index * page_size
-        
+
         r = requests.get(URL+service, params=params)
         if r.status_code != requests.codes.ok: # response 200 etc
             print(r)
@@ -57,7 +57,7 @@ def pull_data(service: str, data_dir: str, data_name: str, data_timedate: dateti
             # nFeatures += len(rjson['features'])
             #print(rjson)
             print(params)
-        
+
         if len(rjson['records']) > 0:
             page_index += 1
             time_stamp = data_timedate.isoformat(timespec='seconds').replace(':', '.')
@@ -74,17 +74,17 @@ def pull_data(service: str, data_dir: str, data_name: str, data_timedate: dateti
 
 
 def setups():
-    """Getting config variable from system. 
+    """Getting config variable from system.
     `.env` file og `setting.ini` (or maybe even environment vars?).
-    Some of these are secret like api keys password etc. 
-    These shold NOT be in souce-code, where it could accidentially be shared to others. 
-    Therefore the file `.env` id NOT commited to git but added to `.gitignore`. 
+    Some of these are secret like api keys password etc.
+    These shold NOT be in souce-code, where it could accidentially be shared to others.
+    Therefore the file `.env` id NOT commited to git but added to `.gitignore`.
     There is an example `.env.example`, withou real sensible values."""
     global URL, data_dir, page_size
     URL = 'https://api.energidataservice.dk/'
     data_dir = './dags/EnergiDataService/data'
     page_size = 1000
-    
+
 
 default_task_args = {
     'retries' : 10,
@@ -104,7 +104,7 @@ def extract_ElectricityProdex(**kwargs):
     """
     global URL, data_dir, page_size
     service = 'dataset/ElectricityProdex5MinRealtime'
-    
+
     params = {}
     #params['limit'] = 4
     page_size = 2
@@ -120,27 +120,26 @@ def extract_ElectricityProdex(**kwargs):
     #https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime?offset=0&start=2022-12-26T00:00&end=2022-12-27T00:00&sort=Minutes5UTC%20DESC&timezone=dk
 
 @task
-def write_to_bucket(eProdex_jsons, table_path):
+def write_to_bucket(eProdex_jsons, minio=None):
+    # tweet_list, batchDatetime_str, batchId = data
+    # batchDatetime = datetime.strptime(batchDatetime_str, "%Y-%m-%d %H:%M:%S")
+
     import pandas as pd
     from minio import Minio
     from io import BytesIO
-    import os
-    import json
 
     # MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME")
-    MINIO_BUCKET_NAME = 'prodex-data'
-    # MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
-    # MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD")
+    MINIO_BUCKET_NAME = 'prodex'
+    MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
+    MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD")
 
-    # MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY')
-    # MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY')
+    MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY')
+    MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY')
 
-    MINIO_ACCESS_KEY = os.getenv('MINIO_ROOT_USER')
-    MINIO_SECRET_KEY = os.getenv('MINIO_ROOT_PASSWORD')
+    # MINIO_ACCESS_KEY = os.getenv('MINIO_ROOT_USER')
+    # MINIO_SECRET_KEY = os.getenv('MINIO_ROOT_PASSWORD')
 
     client = Minio("minio:9000", access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False)
-
-    # print(client.list_buckets())
 
     # Make MINIO_BUCKET_NAME if not exist.
     found = client.bucket_exists(MINIO_BUCKET_NAME)
@@ -149,34 +148,27 @@ def write_to_bucket(eProdex_jsons, table_path):
     else:
         print(f"Bucket '{MINIO_BUCKET_NAME}' already exists!")
 
-    for prodex_json_filepath in eProdex_jsons:
-        
+    for prodex_json in eProdex_jsons:
+
         # df = pd.DataFrame(tweet_list)
         # file_data = df.to_parquet(index=False)
-        with open(prodex_json_filepath, 'r') as jf:
-            prodex_json = json.load(jf)
-        # rec_list = prodex_json['records']
-        # df = pd.read_json(prodex_json_filepath)
-        df = pd.DataFrame(prodex_json['records'])
-        print(df)
+        df = pd.read_json(prodex_json)
         file_data = df.to_parquet(index=False)
 
-        prodex_filename = prodex_json_filepath.split('/')[-1]
         # Put parquet data in the bucket
         filename = (
             # f"tweets/{batchDatetime.strftime('%Y/%m/%d')}/elon_tweets_{batchDatetime.strftime('%H%M%S')}_{batchId}.parquet"
-            f"{table_path}/{prodex_filename}.parquet"
+            f"/{prodex_json}.parquet"
         )
         client.put_object(
             MINIO_BUCKET_NAME, filename, data=BytesIO(file_data), length=len(file_data), content_type="application/csv"
         )
-        os.remove(prodex_json_filepath)
 
 
-@dag( 
+@dag(
     dag_id='electrical_power_gross',
     schedule=timedelta(minutes=5),
-    start_date=pendulum.datetime(2023, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
+    start_date=pendulum.datetime(2013, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
     catchup=True,
     max_active_tasks=5,
     max_active_runs=5,
@@ -189,7 +181,7 @@ def electrical_power_gross():
         eProdex_jsons = extract_ElectricityProdex()
     else: # more or less test mode
         eProdex_jsons = extract_ElectricityProdex(ts=datetime.now().isoformat())
-    write_to_bucket(eProdex_jsons, 'live')
+    write_to_bucket(eProdex_jsons)
 
 @task
 def extract_ElectricityProdex_back(**kwargs):
@@ -199,11 +191,11 @@ def extract_ElectricityProdex_back(**kwargs):
 
     https://www.energidataservice.dk/tso-electricity/ElectricityProdex5MinRealtime#metadata-info
     https://www.energidataservice.dk/guides/api-guides
-    
+
     """
     global URL, data_dir, page_size
     service = 'dataset/ElectricityProdex5MinRealtime'
-    
+
     params = {}
     #params['limit'] = 4
     #page_size = 500
@@ -224,10 +216,10 @@ def extract_ElectricityProdex_back(**kwargs):
     #https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime?offset=0&start=2022-12-26T00:00&end=2022-12-27T00:00&sort=Minutes5UTC%20DESC&timezone=dk
 
 
-@dag( 
+@dag(
     dag_id='electrical_power_gross_back',
     schedule='@monthly',
-    #end_date=pendulum.datetime(2023, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
+    end_date=pendulum.datetime(2023, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
     start_date=pendulum.datetime(2014, 12, 31, 23, 0, 0, tz="Europe/Copenhagen"),
     catchup=True,
     max_active_tasks=5,
@@ -246,8 +238,7 @@ def electrical_power_gross_back():
             'data_interval_start' : datetime.fromisoformat("2020-12-31T23:00:00+00:00"),
         }
         eProdex_jsons = extract_ElectricityProdex_back(**args)
-    write_to_bucket(eProdex_jsons, 'back')
-
+    write_to_bucket(eProdex_jsons)
 
 
 electrical_power_gross()
