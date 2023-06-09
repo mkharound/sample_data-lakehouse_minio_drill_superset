@@ -7,6 +7,8 @@ from typing import List
 from airflow.decorators import dag, task
 import pendulum
 
+### Bucket 'co2' must be created manually and set to public!!!
+
 
 default_task_args = {
     'retries' : 10,
@@ -35,9 +37,6 @@ def write_to_bucket(jsons, minio=None):
     MINIO_BUCKET_NAME = 'co2'
     MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
     MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD")
-
-    #MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY')
-    #MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY')
 
     MINIO_ACCESS_KEY = os.getenv('MINIO_ROOT_USER')
     MINIO_SECRET_KEY = os.getenv('MINIO_ROOT_PASSWORD')
@@ -104,7 +103,7 @@ def pull_data(service: str, data_dir: str, data_name: str, data_timedate: dateti
         else:
             break
 
-        time.sleep(3)
+        time.sleep(5)
     return fNames
 
 @task
@@ -128,7 +127,7 @@ def extract_co2(**kwargs):
 @dag(
     dag_id='co2_gross',
     schedule=timedelta(minutes=5),
-    start_date=pendulum.datetime(2017, 1, 1, 0, 0, 0, tz="Europe/Copenhagen"),
+    start_date=pendulum.datetime(2023, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
     catchup=True,
     max_active_tasks=5,
     max_active_runs=5,
@@ -144,9 +143,9 @@ def co2_gross():
     else:
         co2_jsons = extract_co2(ts=datetime.now().isoformat())
 
-    #write_to_bucket(co2_jsons)
+    write_to_bucket(co2_jsons)
 
-#@task
+@task
 def extract_co2_old(**kwargs):
 
     service = 'dataset/CO2Emis'
@@ -188,8 +187,8 @@ def co2_old():
 
     print(co2_jsons)
 
-    #write_to_bucket(co2_jsons)
+    write_to_bucket(co2_jsons)
 
 
-#co2_gross()
+co2_gross()
 co2_old()

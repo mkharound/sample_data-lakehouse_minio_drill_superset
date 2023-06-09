@@ -31,8 +31,6 @@ print(params)
 
 response = requests.get(url, params=params )
 
-# print(response.text)
-
 result = response.json()
 
 print(result.keys())
